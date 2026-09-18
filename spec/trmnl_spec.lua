@@ -115,17 +115,16 @@ describe("TRMNL display plugin", function()
             end
             replace(Device, "isTouchDevice", function() return true end)
             replace(Device, "hasKeys", function() return true end)
-            replace(require("ui/renderimage"), "renderImageFile", function() return {} end)
-            replace(require("ui/widget/imagewidget"), "new", function()
-                return require("ui/widget/widget"):new{}
+            replace(require("ui/renderimage"), "renderImageFile", function()
+                return require("ffi/blitbuffer").new(Device.screen:getWidth(), Device.screen:getHeight())
             end)
             replace(UIManager, "show", function() end)
             replace(UIManager, "close", function() end)
             replace(UIManager, "setDirty", function() end)
             replace(UIManager, "unschedule", function() end)
             replace(UIManager, "allowStandby", function() end)
-            settings_file = LuaSettings:open(os.tmpname())
-            settings_file:saveSetting("settings", {})
+            settings_file = LuaSettings:wrap{ settings = {} }
+            settings_file.file = os.tmpname()
             replace(LuaSettings, "open", function() return settings_file end)
             replace(require("dispatcher"), "registerAction", function() end)
             instance = TrmnlDisplay:new{
