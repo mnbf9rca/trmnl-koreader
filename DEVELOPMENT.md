@@ -34,7 +34,7 @@ See main.lua:745-796 for complete fetch cycle implementation:
 1. `fetchAndDisplay()` → `NetworkMgr:runWhenConnected()`
 2. `fetchScreenMetadata()` → API request with device headers
 3. `downloadImageIfNeeded()` → Smart caching, cleanup old files
-4. `displayImage()` → Render with tap handler
+4. `displayImage()` → Render with the configured native exit gesture (`tap`, `hold`, or none)
 5. `scheduleNextRefresh()` → Queue next cycle
 
 ## API Details
@@ -86,7 +86,7 @@ cd koreader
 ### Development Tips
 
 - **Plugin location:** `koreader/plugins/trmnl.koplugin/`
-- **Settings:** Stored in `koreader/settings.reader.lua`
+- **Settings:** Stored in `koreader/settings/trmnl.lua`
 - **Logging:** Terminal shows all output (use `logger.info()`, `logger.dbg()`, `logger.err()`)
 - **No hot-reload:** Restart emulator to see changes
 - **WiFi testing:** Emulator can connect to real networks

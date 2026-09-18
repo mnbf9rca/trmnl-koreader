@@ -5,6 +5,7 @@ Fetches and displays personalized screens from the TRMNL API.
 Supports automatic periodic refresh, full-screen display, and WiFi management.
 ]]
 
+local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local Geom = require("ui/geometry")
@@ -103,6 +104,7 @@ TrmnlDisplay.default_settings = {
     user_agent = "trmnl-display/0.1.0-koreader",
     use_server_refresh_rate = false,
     refresh_type = "ui",
+    exit_gesture = "tap",
     show_notifications = true,
     mac_header_name = nil,  -- Header name for MAC address (configurable for BYOS)
     mac_address = nil,  -- Manual MAC address override (nil = auto-detect)
@@ -114,6 +116,7 @@ Plugin initialization - loads settings, initializes managers, and restores state
 function TrmnlDisplay:init()
     self.settings_file = LuaSettings:open(DataStorage:getSettingsDir() .. "/trmnl.lua")
     self.settings = self.settings_file:readSetting("settings") or util.tableDeepCopy(self.default_settings)
+    self.settings.exit_gesture = self.settings.exit_gesture or self.default_settings.exit_gesture
     self.auto_refresh_enabled = self.settings_file:readSetting("auto_refresh_enabled") or false
 
     self.retry_manager = RetryManager:new(self.settings.refresh_interval or
@@ -461,7 +464,7 @@ function TrmnlDisplay:displayImage(image_path)
         alpha = true,
     }
 
-    -- Wrap in InputContainer to handle tap events
+    -- Wrap in InputContainer to handle the configured exit gesture
     self.image_widget = InputContainer:new {
         dimen = {
             x = 0,
@@ -472,9 +475,9 @@ function TrmnlDisplay:displayImage(image_path)
         image,
     }
 
-    -- Add tap handler to close the image
-    self.image_widget.onTapClose = function()
-        logger.info("TRMNL: Closing image via tap")
+    -- Use the same exit behavior for tap and hold
+    self.image_widget.onGestureClose = function()
+        logger.info("TRMNL: Closing image via gesture")
         if self.interactive_mode then
             logger.info("TRMNL: Exiting interactive mode")
             self.interactive_mode = false
@@ -498,12 +501,13 @@ function TrmnlDisplay:displayImage(image_path)
         return true
     end
 
-    -- Register tap gesture
-    if Device:isTouchDevice() then
+    -- Disabled leaves the container without an exit gesture
+    local exit_gesture = self.settings.exit_gesture or "tap"
+    if Device:isTouchDevice() and exit_gesture ~= "disabled" then
         self.image_widget.ges_events = {
-            TapClose = {
+            GestureClose = {
                 GestureRange:new {
-                    ges = "tap",
+                    ges = exit_gesture,
                     range = Geom:new {
                         x = 0, y = 0,
                         w = screen_width,
@@ -1285,6 +1289,30 @@ function TrmnlDisplay:addToMainMenu(menu_items)
             self:createAutoRefreshToggle(),
             self:createServerRefreshToggle(),
             self:createNotificationsToggle(),
+            {
+                text = _("Exit dashboard gesture"),
+                sub_item_table = {
+                    self:createRadioMenuItem("Single tap", "exit_gesture", "tap"),
+                    self:createRadioMenuItem("Long press", "exit_gesture", "hold"),
+                    {
+                        text = _("Disabled"),
+                        checked_func = function()
+                            return self.settings.exit_gesture == "disabled"
+                        end,
+                        callback = function(menu)
+                            UIManager:show(ConfirmBox:new {
+                                text = _("Touch gestures will no longer close the dashboard. On devices without hardware navigation keys, recovery may require editing the plugin settings over USB or SSH. Use Long press to prevent accidental exits while keeping touch access."),
+                                ok_text = _("Disable touch exit"),
+                                ok_callback = function()
+                                    self.settings.exit_gesture = "disabled"
+                                    self:saveSettings()
+                                    menu:updateItems()
+                                end,
+                            })
+                        end,
+                    },
+                },
+            },
             {
                 text = _("E-ink refresh type"),
                 sub_item_table = {
