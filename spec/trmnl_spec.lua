@@ -4,7 +4,8 @@ and this spec symlinked in (plugins/trmnl.koplugin, spec/unit/trmnl_spec.lua):
 
     ./kodev test front trmnl_spec.lua
 
-Covers the /api/display outcomes that matter: the API reports device and token
+Covers dashboard exit gestures and the /api/display outcomes that matter:
+the API reports device and token
 problems as HTTP 200 with an error body, so "no image_url" is the only signal
 the plugin gets, and it has to say something useful about it.
 ]]
@@ -96,5 +97,147 @@ describe("TRMNL display plugin", function()
         local headers = headers_for({ mac_header_name = "MAC Address" }, "AA:BB:CC:DD:EE:FF")
         assert.is_equal("AA:BB:CC:DD:EE:FF", headers["MAC Address"])
         assert.is_nil(headers["ID"])
+    end)
+
+    describe("dashboard exit gesture", function()
+        local Device, UIManager, LuaSettings, Geom, instance, settings_file
+        local originals
+
+        before_each(function()
+            Device = require("device")
+            UIManager = require("ui/uimanager")
+            LuaSettings = require("luasettings")
+            Geom = require("ui/geometry")
+            originals = {}
+            local function replace(object, key, value)
+                table.insert(originals, { object, key, object[key] })
+                object[key] = value
+            end
+            replace(Device, "isTouchDevice", function() return true end)
+            replace(Device, "hasKeys", function() return true end)
+            replace(require("ui/renderimage"), "renderImageFile", function()
+                return require("ffi/blitbuffer").new(Device.screen:getWidth(), Device.screen:getHeight())
+            end)
+            replace(UIManager, "show", function() end)
+            replace(UIManager, "close", function() end)
+            replace(UIManager, "setDirty", function() end)
+            replace(UIManager, "unschedule", function() end)
+            replace(UIManager, "allowStandby", function() end)
+            settings_file = LuaSettings:wrap{ settings = {} }
+            settings_file.file = os.tmpname()
+            replace(LuaSettings, "open", function() return settings_file end)
+            replace(require("dispatcher"), "registerAction", function() end)
+            instance = TrmnlDisplay:new{
+                ui = { menu = { registerToMainMenu = function() end } },
+                loadApiKeyFromFile = function() end,
+            }
+        end)
+
+        after_each(function()
+            for i = #originals, 1, -1 do
+                local entry = originals[i]
+                entry[1][entry[2]] = entry[3]
+            end
+            os.remove(settings_file.file)
+            os.remove(settings_file.file .. ".old")
+        end)
+
+        local function gesture(name)
+            return { ges = name, pos = Geom:new{ x = 10, y = 10 } }
+        end
+
+        local function choices()
+            local menu = {}
+            instance:addToMainMenu(menu)
+            for _, item in ipairs(menu.trmnl.sub_item_table) do
+                if item.text == "Exit dashboard gesture" then
+                    return item.sub_item_table
+                end
+            end
+            assert.fail("Exit dashboard gesture menu missing")
+        end
+
+        it("keeps single tap selected and working for existing settings", function()
+            assert.is_true(choices()[1].checked_func())
+            instance:displayImage("test.png")
+            instance.image_widget:onGesture(gesture("tap"))
+            assert.is_nil(instance.image_widget)
+        end)
+
+        it("defaults fresh installs to single tap", function()
+            settings_file:delSetting("settings")
+            instance:init()
+            assert.is_true(choices()[1].checked_func())
+            instance:displayImage("test.png")
+            instance.image_widget:onGesture(gesture("tap"))
+            assert.is_nil(instance.image_widget)
+        end)
+
+        it("does not register touch gestures on non-touch devices", function()
+            Device.isTouchDevice = function() return false end
+            instance:displayImage("test.png")
+            assert.is_nil(next(instance.image_widget.ges_events))
+        end)
+
+        it("ignores taps in hold mode and stops interactive refresh on hold", function()
+            instance.settings.exit_gesture = "hold"
+            instance.interactive_mode = true
+            instance.auto_refresh_enabled = true
+            instance.auto_refresh_scheduled = true
+            instance.refresh_task = function() end
+            instance:displayImage("test.png")
+            local widget = instance.image_widget
+            widget:onGesture(gesture("tap"))
+            assert.is_equal(widget, instance.image_widget)
+            assert.is_true(instance.auto_refresh_enabled)
+            widget:onGesture(gesture("hold"))
+            assert.is_nil(instance.image_widget)
+            assert.is_false(instance.interactive_mode)
+            assert.is_false(instance.auto_refresh_enabled)
+            assert.is_false(instance.auto_refresh_scheduled)
+        end)
+
+        it("registers no exit gesture when disabled, including after refresh", function()
+            instance.settings.exit_gesture = "disabled"
+            for _ = 1, 2 do
+                instance:displayImage("test.png")
+                local widget = instance.image_widget
+                assert.is_nil(next(widget.ges_events))
+                widget:onGesture(gesture("tap"))
+                widget:onGesture(gesture("hold"))
+                assert.is_equal(widget, instance.image_widget)
+            end
+            assert.is_not_nil(instance.image_widget.key_events.AnyKeyPressed)
+            instance.image_widget:onKeyPress(require("device/key"):new("LPgFwd", {}))
+            assert.is_nil(instance.image_widget)
+        end)
+
+        it("persists the selected gesture through the existing settings mechanism", function()
+            local menu = choices()
+            menu[2].callback()
+            assert.is_equal("hold", dofile(settings_file.file).settings.exit_gesture)
+            settings_file.data = dofile(settings_file.file)
+            instance:init()
+            assert.is_true(menu[2].checked_func())
+            assert.is_false(menu[1].checked_func())
+            menu[1].callback()
+            assert.is_equal("tap", dofile(settings_file.file).settings.exit_gesture)
+        end)
+
+        it("saves Disabled only after confirmation, leaving Cancel unchanged", function()
+            local dialog, updated
+            UIManager.show = function(_, widget) dialog = widget end
+            local disabled = choices()[3]
+            local menu = { updateItems = function() updated = disabled.checked_func() end }
+            disabled.callback(menu)
+            assert.is_equal("tap", instance.settings.exit_gesture)
+            dialog.cancel_callback()
+            assert.is_equal("tap", instance.settings.exit_gesture)
+            disabled.callback(menu)
+            dialog.ok_callback()
+            assert.is_equal("disabled", dofile(settings_file.file).settings.exit_gesture)
+            assert.is_true(disabled.checked_func())
+            assert.is_true(updated)
+        end)
     end)
 end)

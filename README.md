@@ -19,7 +19,7 @@ A spiritual successor to the [TRMNL Kindle Script](https://github.com/usetrmnl/t
 5. Restart KOReader.
 6. Open **Tools → TRMNL Display** to confirm the plugin loaded, then choose **Fetch screen now**.
 
-If the screen appears, you are done. Tap it (or press a button on non-touch devices) to dismiss it.
+If the screen appears, you are done. By default, tap it (or press a button on non-touch devices) to dismiss it.
 
 ## Run It as a Dashboard
 
@@ -31,7 +31,9 @@ For a device that sits on a desk and updates itself:
 2. **Tools → TRMNL Display → Enable auto-refresh**. The first fetch happens immediately, then repeats on your refresh interval.
 3. Leave KOReader on that screen.
 
-Tap the display to stop. To start again later, use **Start TRMNL (interactive)**.
+Tap the display to dismiss it (the default exit gesture). For a dedicated dashboard, set
+**Tools → TRMNL Display → Exit dashboard gesture → Long press** to avoid accidental exits.
+Exiting a session started with **Start TRMNL (interactive)** also stops auto-refresh.
 
 ## Make the Battery Last
 
@@ -61,7 +63,16 @@ Also in the **TRMNL Display** menu:
 
 - **Use server refresh interval** — let the server's `refresh_rate` override your local interval. Recommended, since you can then retune timing from the dashboard without touching the device.
 - **E-ink refresh type** — UI (balanced), Full (best quality), Flash UI, or Partial (fastest)
+- **Exit dashboard gesture** — Single tap (default), Long press, or Disabled. Saved across restarts; applies to both manual fetches and auto-refresh screens. Hardware key exits remain available on devices with navigation keys.
 - **Show status notifications** — errors are always shown regardless
+
+**Disabled** asks for confirmation and registers no touch exit gesture. On a touch-only
+Kindle there is no plugin-provided touch exit; sleep/wake does not dismiss the dashboard,
+and restarting may reopen it if auto-refresh is enabled. Prefer **Long press** unless you
+have a recovery route. To recover, stop KOReader, back up `koreader/settings/trmnl.lua`,
+and change `["exit_gesture"] = "disabled"` to `["exit_gesture"] = "tap"` inside its
+`settings` table via USB or SSH, then relaunch KOReader. Editing while KOReader is running
+may be overwritten when it saves settings.
 
 ## Gestures
 
