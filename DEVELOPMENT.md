@@ -34,7 +34,7 @@ See main.lua:745-796 for complete fetch cycle implementation:
 1. `fetchAndDisplay()` → `NetworkMgr:runWhenConnected()`
 2. `fetchScreenMetadata()` → API request with device headers
 3. `downloadImageIfNeeded()` → Smart caching, cleanup old files
-4. `displayImage()` → Render with the configured native exit gesture (`tap`, `hold`, or none)
+4. `displayImage()` → Render with configured native exit and refresh gestures (`tap`, `hold`, or none). Refresh calls the existing `onTrmnlFetch()` action; conflicting gestures are unavailable in the menus.
 5. `scheduleNextRefresh()` → Queue next cycle
 
 ## API Details

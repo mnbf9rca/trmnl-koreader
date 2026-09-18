@@ -64,9 +64,10 @@ Also in the **TRMNL Display** menu:
 - **Use server refresh interval** — let the server's `refresh_rate` override your local interval. Recommended, since you can then retune timing from the dashboard without touching the device.
 - **E-ink refresh type** — UI (balanced), Full (best quality), Flash UI, or Partial (fastest)
 - **Exit dashboard gesture** — Single tap (default), Long press, or Disabled. Saved across restarts; applies to both manual fetches and auto-refresh screens. Hardware key exits remain available on devices with navigation keys.
+- **Refresh dashboard gesture** — Disabled (default), Single tap, or Long press. Uses **Fetch screen now** while keeping the dashboard open and auto-refresh running. Saved across restarts. A gesture assigned to exit cannot also refresh.
 - **Show status notifications** — errors are always shown regardless
 
-**Disabled** asks for confirmation and registers no touch exit gesture. On a touch-only
+**Exit dashboard gesture → Disabled** asks for confirmation and registers no touch exit gesture. On a touch-only
 Kindle there is no plugin-provided touch exit; sleep/wake does not dismiss the dashboard,
 and restarting may reopen it if auto-refresh is enabled. Prefer **Long press** unless you
 have a recovery route. To recover, stop KOReader, back up `koreader/settings/trmnl.lua`,
@@ -75,6 +76,10 @@ and change `["exit_gesture"] = "disabled"` to `["exit_gesture"] = "tap"` inside 
 may be overwritten when it saves settings.
 
 ## Gestures
+
+To tap for a new screen, first set **Exit dashboard gesture → Long press**, then
+**Refresh dashboard gesture → Single tap**. Hold to exit. Refresh uses the same request
+as **Fetch screen now**; the TRMNL server determines which screen is returned.
 
 The plugin registers two actions with KOReader's dispatcher, so you can bind them to gestures, corner taps, or hardware keys via **Settings → Taps and gestures → Gesture manager**:
 

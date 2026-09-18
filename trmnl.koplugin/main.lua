@@ -105,6 +105,7 @@ TrmnlDisplay.default_settings = {
     use_server_refresh_rate = false,
     refresh_type = "ui",
     exit_gesture = "tap",
+    refresh_gesture = "disabled",
     show_notifications = true,
     mac_header_name = nil,  -- Header name for MAC address (configurable for BYOS)
     mac_address = nil,  -- Manual MAC address override (nil = auto-detect)
@@ -117,6 +118,7 @@ function TrmnlDisplay:init()
     self.settings_file = LuaSettings:open(DataStorage:getSettingsDir() .. "/trmnl.lua")
     self.settings = self.settings_file:readSetting("settings") or util.tableDeepCopy(self.default_settings)
     self.settings.exit_gesture = self.settings.exit_gesture or self.default_settings.exit_gesture
+    self.settings.refresh_gesture = self.settings.refresh_gesture or self.default_settings.refresh_gesture
     self.auto_refresh_enabled = self.settings_file:readSetting("auto_refresh_enabled") or false
 
     self.retry_manager = RetryManager:new(self.settings.refresh_interval or
@@ -464,7 +466,7 @@ function TrmnlDisplay:displayImage(image_path)
         alpha = true,
     }
 
-    -- Wrap in InputContainer to handle the configured exit gesture
+    -- Wrap in InputContainer to handle the configured dashboard gestures
     self.image_widget = InputContainer:new {
         dimen = {
             x = 0,
@@ -488,6 +490,11 @@ function TrmnlDisplay:displayImage(image_path)
         return true
     end
 
+    self.image_widget.onGestureRefresh = function()
+        self:onTrmnlFetch()
+        return true
+    end
+
     -- Add key press handler for non-touch devices
     self.image_widget.onAnyKeyPressed = function()
         logger.info("TRMNL: Closing image via button press")
@@ -501,21 +508,25 @@ function TrmnlDisplay:displayImage(image_path)
         return true
     end
 
-    -- Disabled leaves the container without an exit gesture
     local exit_gesture = self.settings.exit_gesture or "tap"
-    if Device:isTouchDevice() and exit_gesture ~= "disabled" then
-        self.image_widget.ges_events = {
-            GestureClose = {
-                GestureRange:new {
-                    ges = exit_gesture,
-                    range = Geom:new {
-                        x = 0, y = 0,
-                        w = screen_width,
-                        h = screen_height,
+    local refresh_gesture = self.settings.refresh_gesture or "disabled"
+    -- Preserve exit access if settings were edited to use the same gesture.
+    if refresh_gesture == exit_gesture then refresh_gesture = "disabled" end
+    if Device:isTouchDevice() then
+        for event, ges in pairs({ GestureClose = exit_gesture, GestureRefresh = refresh_gesture }) do
+            if ges ~= "disabled" then
+                self.image_widget.ges_events[event] = {
+                    GestureRange:new {
+                        ges = ges,
+                        range = Geom:new {
+                            x = 0, y = 0,
+                            w = screen_width,
+                            h = screen_height,
+                        }
                     }
                 }
-            }
-        }
+            end
+        end
     end
 
     -- Register key events for non-touch devices
@@ -1178,13 +1189,17 @@ Create a radio button menu item for exclusive choices.
 @tparam string label Display text
 @tparam string setting_key Settings key to check/update
 @tparam string value Value to compare and set
+@tparam string conflicting_setting Optional setting that cannot use the same value
 @treturn table Menu item configuration
 ]]
-function TrmnlDisplay:createRadioMenuItem(label, setting_key, value)
+function TrmnlDisplay:createRadioMenuItem(label, setting_key, value, conflicting_setting)
     return {
         text = _(label),
         checked_func = function()
             return self.settings[setting_key] == value
+        end,
+        enabled_func = function()
+            return not conflicting_setting or self.settings[conflicting_setting] ~= value
         end,
         callback = function()
             self.settings[setting_key] = value
@@ -1292,8 +1307,8 @@ function TrmnlDisplay:addToMainMenu(menu_items)
             {
                 text = _("Exit dashboard gesture"),
                 sub_item_table = {
-                    self:createRadioMenuItem("Single tap", "exit_gesture", "tap"),
-                    self:createRadioMenuItem("Long press", "exit_gesture", "hold"),
+                    self:createRadioMenuItem("Single tap", "exit_gesture", "tap", "refresh_gesture"),
+                    self:createRadioMenuItem("Long press", "exit_gesture", "hold", "refresh_gesture"),
                     {
                         text = _("Disabled"),
                         checked_func = function()
@@ -1311,6 +1326,15 @@ function TrmnlDisplay:addToMainMenu(menu_items)
                             })
                         end,
                     },
+                },
+            },
+            {
+                text = _("Refresh dashboard gesture"),
+                help_text = _("Fetch the current TRMNL screen without closing the dashboard. A gesture used to exit is unavailable here; change Exit dashboard gesture first."),
+                sub_item_table = {
+                    self:createRadioMenuItem("Disabled", "refresh_gesture", "disabled"),
+                    self:createRadioMenuItem("Single tap", "refresh_gesture", "tap", "exit_gesture"),
+                    self:createRadioMenuItem("Long press", "refresh_gesture", "hold", "exit_gesture"),
                 },
             },
             {
