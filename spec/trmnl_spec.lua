@@ -99,7 +99,7 @@ describe("TRMNL display plugin", function()
         assert.is_nil(headers["ID"])
     end)
 
-    describe("dashboard exit gesture", function()
+    describe("dashboard gestures", function()
         local Device, UIManager, LuaSettings, Geom, instance, settings_file
         local originals
 
@@ -146,19 +146,21 @@ describe("TRMNL display plugin", function()
             return { ges = name, pos = Geom:new{ x = 10, y = 10 } }
         end
 
-        local function choices()
+        local function choices(label)
+            label = label or "Exit dashboard gesture"
             local menu = {}
             instance:addToMainMenu(menu)
             for _, item in ipairs(menu.trmnl.sub_item_table) do
-                if item.text == "Exit dashboard gesture" then
+                if item.text == label then
                     return item.sub_item_table
                 end
             end
-            assert.fail("Exit dashboard gesture menu missing")
+            assert(false, label .. " menu missing")
         end
 
         it("keeps single tap selected and working for existing settings", function()
             assert.is_true(choices()[1].checked_func())
+            assert.is_true(choices("Refresh dashboard gesture")[1].checked_func())
             instance:displayImage("test.png")
             instance.image_widget:onGesture(gesture("tap"))
             assert.is_nil(instance.image_widget)
@@ -168,6 +170,7 @@ describe("TRMNL display plugin", function()
             settings_file:delSetting("settings")
             instance:init()
             assert.is_true(choices()[1].checked_func())
+            assert.is_true(choices("Refresh dashboard gesture")[1].checked_func())
             instance:displayImage("test.png")
             instance.image_widget:onGesture(gesture("tap"))
             assert.is_nil(instance.image_widget)
@@ -175,6 +178,7 @@ describe("TRMNL display plugin", function()
 
         it("does not register touch gestures on non-touch devices", function()
             Device.isTouchDevice = function() return false end
+            instance.settings.refresh_gesture = "hold"
             instance:displayImage("test.png")
             assert.is_nil(next(instance.image_widget.ges_events))
         end)
@@ -238,6 +242,62 @@ describe("TRMNL display plugin", function()
             assert.is_equal("disabled", dofile(settings_file.file).settings.exit_gesture)
             assert.is_true(disabled.checked_func())
             assert.is_true(updated)
+        end)
+
+        for _, refresh_gesture in ipairs({ "tap", "hold" }) do
+            it("uses Fetch now on " .. refresh_gesture .. " without exiting the dashboard", function()
+                local calls = 0
+                instance.fetchAndDisplay = function(_, skip_debounce)
+                    assert.is_true(skip_debounce)
+                    calls = calls + 1
+                end
+                instance.settings.refresh_gesture = refresh_gesture
+                instance.settings.exit_gesture = refresh_gesture == "tap" and "hold" or "tap"
+                instance.interactive_mode = true
+                instance.auto_refresh_enabled = true
+                instance.auto_refresh_scheduled = true
+                for _ = 1, 2 do
+                    instance:displayImage("test.png")
+                    local widget = instance.image_widget
+                    assert.is_true(widget:onGesture(gesture(refresh_gesture)))
+                    assert.is_equal(widget, instance.image_widget)
+                end
+                assert.is_equal(2, calls)
+                assert.is_true(instance.interactive_mode)
+                assert.is_true(instance.auto_refresh_enabled)
+                assert.is_true(instance.auto_refresh_scheduled)
+            end)
+        end
+
+        it("persists refresh choices and disables conflicting choices in both menus", function()
+            local exit_menu = choices()
+            local refresh_menu = choices("Refresh dashboard gesture")
+            assert.is_false(refresh_menu[2].enabled_func()) -- tap already exits
+            assert.is_true(refresh_menu[3].enabled_func())
+            exit_menu[2].callback() -- hold exits
+            assert.is_true(refresh_menu[2].enabled_func())
+            assert.is_false(refresh_menu[3].enabled_func())
+            refresh_menu[2].callback() -- tap refreshes
+            assert.is_equal("tap", dofile(settings_file.file).settings.refresh_gesture)
+            settings_file.data = dofile(settings_file.file)
+            instance:init()
+            assert.is_true(refresh_menu[2].checked_func())
+            assert.is_false(exit_menu[1].enabled_func())
+            assert.is_true(exit_menu[2].enabled_func())
+            refresh_menu[1].callback() -- disable refresh gesture
+            assert.is_equal("disabled", dofile(settings_file.file).settings.refresh_gesture)
+            assert.is_true(exit_menu[1].enabled_func())
+        end)
+
+        it("keeps exit working if saved gesture settings conflict", function()
+            local calls = 0
+            instance.fetchAndDisplay = function() calls = calls + 1 end
+            instance.settings.exit_gesture = "tap"
+            instance.settings.refresh_gesture = "tap"
+            instance:displayImage("test.png")
+            instance.image_widget:onGesture(gesture("tap"))
+            assert.is_nil(instance.image_widget)
+            assert.is_equal(0, calls)
         end)
     end)
 end)
